@@ -1,0 +1,80 @@
+name: Build for Windows 7 (x64)
+
+on:
+  push:
+    branches: [win7-support]
+  pull_request:
+    branches: [win7-support]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout pdfcraft
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build release
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:WINDOWS,6.01"
+          cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+      - name: Find pdfium.dll
+        shell: pwsh
+        run: |
+          Write-Host "Searching for pdfium.dll..."
+          $found = Get-ChildItem -Path . -Filter "pdfium.dll" -Recurse -ErrorAction SilentlyContinue
+          if ($found) {
+            $found | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+          } else {
+            Write-Host "::warning::pdfium.dll not found in build output"
+          }
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          $exe = Get-ChildItem -Path "target\x86_64-pc-windows-msvc\release" -Filter "pdfcraft*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path "target\x86_64-pc-windows-msvc\release" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "build|deps" } | Select-Object -First 1
+          }
+          if ($exe) {
+            Copy-Item $exe.FullName dist\
+            Write-Host "Copied executable: $($exe.Name)"
+          } else {
+            Write-Error "No executable found"
+          }
+
+          $dll = Get-ChildItem -Path . -Filter "pdfium.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($dll) {
+            Copy-Item $dll.FullName dist\
+            Write-Host "Copied pdfium.dll from: $($dll.FullName)"
+          }
+
+          Write-Host "=== Artifact contents ==="
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfcraft-win7-x64
+          path: dist/*
+          if-no-files-found: error
