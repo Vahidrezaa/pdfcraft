@@ -17,7 +17,7 @@ craft-ui = { git = "https://github.com/storytold/craft-libs", version = "0.1.0",
 # Quit the macOS way (#1136): ⌘Q asks about unsaved changes, and closing quits through `terminate:`.
 craft-quit = { git = "https://github.com/storytold/craft-libs", version = "0.1.0", rev = "f58bc1a3df490992d633393d0898af0588ce882c" }
 # Shared system spooler; document composition remains in pdfcraft-print.
-craft-print = { git = "https://github.com/vahidrezaa/craft-libs", version = "0.1.0", rev = "PASTE_NEW_CRAFTLIBS_HASH", features = ["pdfium-backend"] }
+craft-print = { git = "https://github.com/vahidrezaa/craft-libs", version = "0.1.0", rev = "518fbb2defe5ac191320862cd1a30de528eafddc", features = ["pdfium-backend"] }
 # Whether a path stored in a document may be opened (GoToR link targets).
 craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa036b43c09a67fb9a3fbd17ffe63" }
 # internal
@@ -124,4 +124,4 @@ vello_common = { path = "vendor/vello_common" }
 
 
 [patch."https://github.com/storytold/winprint.rs"]
-winprint = { git = "https://github.com/vahidrezaa/winprint.rs", rev = "94858df0f69d048943a28dfd34efeefd086bf0a4" }
+winprint = { git = "https://github.com/vahidrezaa/winprint.rs", rev = "c48952790e60e5899aa8a2bced824216030e9b2c" }
