@@ -97,6 +97,8 @@
     <ComponentGroup Id="PdfcraftFiles" Directory="INSTALLFOLDER">
       <Component Id="PdfcraftApp" Guid="E724C1C6-091F-4E21-A685-80D089FDBE21">
         <File Id="PdfcraftExe" Source="$(var.BinDir)\pdfcraft.exe" KeyPath="yes" />
+        <File Id="PdfiumDll" Source="$(var.BinDir)\pdfium.dll" />
+        <File Id="PdfiumLicenseFile" Source="$(var.BinDir)\PDFium-LICENSE.txt" />
 
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\pdfcraft.exe" Value="[#PdfcraftExe]" Type="string" />
 

@@ -87,6 +87,14 @@ $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item (Join-Path $Bin 'pdfcraft.exe'), (Join-Path $Bin 'pdfcraft-cli.exe') $Stage
+# Windows 7 fork: pdfium.dll is required for printing (upstream uses WinRT PDF instead)
+$pdfiumSrc = Join-Path $Bin 'pdfium.dll'
+if (Test-Path $pdfiumSrc) {
+  Copy-Item $pdfiumSrc $Stage
+  Copy-Item (Join-Path $Root 'third_party\PDFium-LICENSE.txt') $Stage
+} else {
+  throw "pdfium.dll not found in $Bin - Windows 7 fork requires it for printing"
+}
 # The document icon embeds Lucide artwork: carry its ISC notice and the project licences
 # beside the binaries in both distributions.
 foreach ($f in 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE') {
@@ -128,6 +136,18 @@ $Portable = Join-Path $TargetDir "windows-package\pdfcraft-$Version-windows-$Arc
 Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
 Copy-Item (Join-Path $Stage '*.exe') $Portable
+# Windows 7 fork: ship pdfium.dll and the glow launcher in the portable zip
+if (Test-Path (Join-Path $Stage 'pdfium.dll')) {
+  Copy-Item (Join-Path $Stage 'pdfium.dll') $Portable
+  Copy-Item (Join-Path $Stage 'PDFium-LICENSE.txt') $Portable
+  @"
+@echo off
+set PDFCRAFT_RENDERER=gl
+start "" "%~dp0pdfcraft.exe"
+"@ | Out-File -Encoding ASCII (Join-Path $Portable 'run_pdfcraft.bat')
+  Copy-Item (Join-Path $Root 'README-WIN7.md') $Portable -ErrorAction SilentlyContinue
+  Copy-Item (Join-Path $Root 'INSTALL.md') $Portable -ErrorAction SilentlyContinue
+}
 foreach ($f in 'NOTICE', 'LICENSE-document.txt') {
   Copy-Item (Join-Path $Stage $f) $Portable
 }

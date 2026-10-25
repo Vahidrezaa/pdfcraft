@@ -20,26 +20,26 @@ jobs:
             arch: x86
             pdfium_url: https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x86.tgz
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout pdfcraft
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
           key: win7-${{ matrix.arch }}
           cache-on-failure: true
 
-      - name: Build release
+      - name: Install WiX v5
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build pdfcraft (GUI)
         shell: pwsh
         run: |
           $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:WINDOWS,6.01"
@@ -47,68 +47,38 @@ jobs:
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
+      - name: Build pdfcraft-cli (console)
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:CONSOLE,6.01"
+          cargo build --release --target ${{ matrix.target }} -p pdfcraft-cli
+
       - name: Download pdfium.dll
         shell: pwsh
         run: |
-          $url = "${{ matrix.pdfium_url }}"
           $tgz = Join-Path $env:RUNNER_TEMP "pdfium.tgz"
-          Invoke-WebRequest -Uri $url -OutFile $tgz
+          Invoke-WebRequest -Uri "${{ matrix.pdfium_url }}" -OutFile $tgz
           $extract = Join-Path $env:RUNNER_TEMP "pdfium"
           New-Item -ItemType Directory -Force -Path $extract | Out-Null
           tar -xzf $tgz -C $extract
-          # pdfium-binaries has bin/pdfium.dll inside the tgz
           $dll = Get-ChildItem -Path $extract -Recurse -Filter "pdfium.dll" | Select-Object -First 1
-          if (-not $dll) { Write-Error "pdfium.dll not found in tgz"; exit 1 }
-          Copy-Item $dll.FullName "$env:RUNNER_TEMP\pdfium.dll"
-          Write-Host "pdfium.dll: $($dll.FullName), size: $((Get-Item $dll.FullName).Length) bytes"
+          if (-not $dll) { Write-Error "pdfium.dll not found"; exit 1 }
+          Copy-Item $dll.FullName "target\${{ matrix.target }}\release\pdfium.dll"
+          Write-Host "pdfium.dll: $((Get-Item $dll.FullName).Length) bytes"
 
-      - name: Collect artifacts
+      - name: Package (MSI + portable zip)
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
+        run: .\packaging\windows\package.ps1 -SkipBuild -Arch ${{ matrix.arch }}
 
-          # 1. Executable
-          $exe = Get-ChildItem -Path "target\${{ matrix.target }}\release" -Filter "pdfcraft*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { Write-Error "pdfcraft.exe not found"; exit 1 }
-          Copy-Item $exe.FullName dist\
-          Write-Host "Copied: $($exe.Name)"
-
-          # 2. pdfium.dll
-          Copy-Item "$env:RUNNER_TEMP\pdfium.dll" dist\
-
-          # 3. run_pdfcraft.bat
-          @"
-          @echo off
-          set PDFCRAFT_RENDERER=gl
-          start "" "%~dp0pdfcraft.exe"
-          "@ | Out-File -Encoding ASCII dist\run_pdfcraft.bat
-
-          # 4. PdfCraft licenses
-          Copy-Item NOTICE dist\ -ErrorAction SilentlyContinue
-          Copy-Item LICENSE-MIT dist\ -ErrorAction SilentlyContinue
-          Copy-Item LICENSE-APACHE dist\ -ErrorAction SilentlyContinue
-          Copy-Item LICENSE-document.txt dist\ -ErrorAction SilentlyContinue
-
-          # 5. PDFium license
-          Copy-Item third_party\PDFium-LICENSE.txt dist\ -ErrorAction SilentlyContinue
-
-          # 6. Docs
-          Copy-Item README-WIN7.md dist\ -ErrorAction SilentlyContinue
-          Copy-Item INSTALL.md dist\ -ErrorAction SilentlyContinue
-
-          Write-Host "=== Contents ==="
-          Get-ChildItem dist | Format-Table Name, Length
-
-      - name: Zip portable
+      - name: List output
         shell: pwsh
-        run: |
-          $zipName = "pdfcraft-win7-${{ matrix.arch }}-portable.zip"
-          Compress-Archive -Path dist\* -DestinationPath $zipName
-          Write-Host "Created: $zipName"
+        run: Get-ChildItem dist\release | Format-Table Name, Length
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pdfcraft-win7-${{ matrix.arch }}-portable
-          path: pdfcraft-win7-${{ matrix.arch }}-portable.zip
+          name: pdfcraft-win7-${{ matrix.arch }}
+          path: |
+            dist\release\*.msi
+            dist\release\*-portable.zip
           if-no-files-found: error
