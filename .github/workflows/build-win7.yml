@@ -36,39 +36,55 @@ jobs:
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
-      - name: Find pdfium.dll
-        shell: pwsh
-        run: |
-          Write-Host "Searching for pdfium.dll..."
-          $found = Get-ChildItem -Path . -Filter "pdfium.dll" -Recurse -ErrorAction SilentlyContinue
-          if ($found) {
-            $found | ForEach-Object { Write-Host "Found: $($_.FullName)" }
-          } else {
-            Write-Host "::warning::pdfium.dll not found in build output"
-          }
-
       - name: Collect artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
+          # --- 1. Executable ---
           $exe = Get-ChildItem -Path "target\x86_64-pc-windows-msvc\release" -Filter "pdfcraft*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) {
-            $exe = Get-ChildItem -Path "target\x86_64-pc-windows-msvc\release" -Filter "*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "build|deps" } | Select-Object -First 1
+            Write-Error "pdfcraft.exe not found"
+            exit 1
           }
-          if ($exe) {
-            Copy-Item $exe.FullName dist\
-            Write-Host "Copied executable: $($exe.Name)"
-          } else {
-            Write-Error "No executable found"
-          }
+          Copy-Item $exe.FullName dist\
+          Write-Host "Copied: $($exe.Name)"
 
+          # --- 2. pdfium.dll ---
           $dll = Get-ChildItem -Path . -Filter "pdfium.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($dll) {
             Copy-Item $dll.FullName dist\
-            Write-Host "Copied pdfium.dll from: $($dll.FullName)"
+            Write-Host "Copied: pdfium.dll from $($dll.FullName)"
+          } else {
+            Write-Error "pdfium.dll not found — printing will not work"
+            exit 1
           }
 
+          # --- 3. run_pdfcraft.bat ---
+          @"
+          @echo off
+          set PDFCRAFT_RENDERER=gl
+          start "" "%~dp0pdfcraft.exe"
+          "@ | Out-File -Encoding ASCII dist\run_pdfcraft.bat
+          Write-Host "Created: run_pdfcraft.bat"
+
+          # --- 4. PdfCraft licenses ---
+          Copy-Item NOTICE dist\ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE-MIT dist\ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE-APACHE dist\ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE-document.txt dist\ -ErrorAction SilentlyContinue
+          Write-Host "Copied: PdfCraft NOTICE and licenses"
+
+          # --- 5. pdfium-binaries license ---
+          Copy-Item third_party\PDFium-LICENSE.txt dist\ -ErrorAction SilentlyContinue
+          Write-Host "Copied: PDFium-LICENSE.txt"
+
+          # --- 6. Our docs ---
+          Copy-Item README-WIN7.md dist\ -ErrorAction SilentlyContinue
+          Copy-Item INSTALL.md dist\ -ErrorAction SilentlyContinue
+          Write-Host "Copied: README-WIN7.md, INSTALL.md"
+
+          # --- Summary ---
           Write-Host "=== Artifact contents ==="
           Get-ChildItem dist | Format-Table Name, Length
 
