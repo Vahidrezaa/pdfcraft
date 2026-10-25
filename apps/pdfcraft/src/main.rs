@@ -265,7 +265,7 @@ fn main() -> eframe::Result {
         single_instance::Claim::Primary(server) => Some(server),
         single_instance::Claim::Alone => None,
     };
-    let choice = renderer_choice(std::env::var("PDFCRAFT_RENDERER").ok().as_deref());
+    let choice = renderer_choice(renderer_env().as_deref());
     let launch = Launch { files, options, control_file, create_images, integrated, window_controls };
     // Finder, Open With and the Dock deliver files as Apple events, not arguments; catch the one
     // that launched us as well as later ones. Lives until the event loop returns.
@@ -325,6 +325,41 @@ fn renderer_choice(value: Option<&str>) -> RendererChoice {
         Some("gl" | "opengl" | "glow") => RendererChoice::Gl,
         _ => RendererChoice::Auto,
     }
+}
+
+/// The renderer preference, from `PDFCRAFT_RENDERER` or the VxKex detector.
+///
+/// VxKex's partial DXGI emulation makes `CreateDXGIFactory2` return `E_NOINTERFACE`; wgpu
+/// exits silently on that instead of returning `Err`, so the retry-with-OpenGL path below
+/// never runs. Detect VxKex by its injected `KexDll.dll` and ask for OpenGL directly.
+fn renderer_env() -> Option<String> {
+    if let Ok(value) = std::env::var("PDFCRAFT_RENDERER") {
+        return Some(value);
+    }
+    #[cfg(target_os = "windows")]
+    if vxkex_is_active() {
+        log::info!("VxKex detected: forcing OpenGL (glow) to avoid its incomplete DXGI");
+        return Some("gl".into());
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn vxkex_is_active() -> bool {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleW(lp_module_name: *const u16) -> isize;
+    }
+
+    let wide: Vec<u16> = OsStr::new("KexDll.dll")
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: `wide` is a NUL-terminated UTF-16 string; GetModuleHandleW only reads it.
+    unsafe { GetModuleHandleW(wide.as_ptr()) != 0 }
 }
 
 /// Whether a failed run should be retried with OpenGL: only when wgpu was tried first by choice of
@@ -846,6 +881,14 @@ mod tests {
         assert_eq!(super::path_from_arg("file:///tmp/a%2".to_string()), "/tmp/a%2");
         assert_eq!(super::path_from_arg("file:///tmp/%zz%".to_string()), "/tmp/%zz%");
         assert_eq!(super::path_from_arg("file:///tmp/%FF.pdf".to_string()), "file:///tmp/%FF.pdf");
+    }
+
+    #[test]
+    fn the_vxkex_env_is_read_first() {
+        // PDFCRAFT_RENDERER is honoured; VxKex detection only runs when it's unset.
+        // (Testing the VxKex detection itself needs VxKex loaded, which CI doesn't have.)
+        assert_eq!(super::renderer_choice(super::renderer_env().as_deref()),
+                   super::renderer_choice(std::env::var("PDFCRAFT_RENDERER").ok().as_deref()));
     }
 
     #[test]
