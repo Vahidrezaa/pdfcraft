@@ -346,20 +346,23 @@ fn renderer_env() -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn vxkex_is_active() -> bool {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
+    use std::process::Command;
 
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetModuleHandleW(lp_module_name: *const u16) -> isize;
+    let pid = std::process::id();
+    let Ok(output) = Command::new("tasklist")
+        .args(["/M", "/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+        .output()
+    else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
     }
 
-    let wide: Vec<u16> = OsStr::new("KexDll.dll")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    // SAFETY: `wide` is a NUL-terminated UTF-16 string; GetModuleHandleW only reads it.
-    unsafe { GetModuleHandleW(wide.as_ptr()) != 0 }
+    String::from_utf8_lossy(&output.stdout)
+        .to_lowercase()
+        .contains("kexdll.dll")
 }
 
 /// Whether a failed run should be retried with OpenGL: only when wgpu was tried first by choice of
