@@ -104,16 +104,15 @@ Copy-Item (Join-Path $Root 'assets\app-icon\LICENSE-document.txt') $Stage
 
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'pdfcraft.exe') (Join-Path $Stage 'pdfcraft-cli.exe')
 
-# OCR models (#103): the app looks in models\ beside pdfcraft.exe. `cargo xtask models` fetches every
-# ATTRIBUTION.toml `kind = "model"` file (verified by SHA-256) with its licence and ATTRIBUTION.txt;
-# the MSI and the portable zip take the whole folder, so new models ship without naming them here.
+# Windows 7 fork: models are committed to the repo because upstream S3 returns 403.
 $Models = Join-Path $Stage 'models'
 New-Item -ItemType Directory -Force -Path $Models | Out-Null
-Push-Location $Root
-try { Invoke-Native 'cargo xtask models' { cargo xtask models $Models } } finally { Pop-Location }
-Remove-Item -Force (Join-Path $Models '*.part') -ErrorAction SilentlyContinue
-if (-not (Test-Path (Join-Path $Models 'ATTRIBUTION.txt')) -or -not (Get-ChildItem (Join-Path $Models '*.LICENCE.txt'))) {
-  throw "no OCR models in $Models after cargo xtask models"
+$CommittedModels = Join-Path $Root 'third_party\ocr-models'
+if (Test-Path $CommittedModels) {
+  Copy-Item "$CommittedModels\*" $Models -Recurse
+  Write-Host "Copied OCR models from $CommittedModels"
+} else {
+  Write-Warning "OCR models not found in $CommittedModels - OCR will not work"
 }
 
 # ---- MSI ---------------------------------------------------------------------------------------
